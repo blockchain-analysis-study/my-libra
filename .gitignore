@@ -43,3 +43,6 @@ language/tools/vm-genesis/genesis/vm_config.toml
 
 # Move Build Output
 move_build_output/
+
+
+.idea/

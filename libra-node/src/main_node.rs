@@ -62,15 +62,22 @@ fn setup_debug_interface(config: &NodeConfig) -> NodeDebugService {
     NodeDebugService::new(addr)
 }
 
+// 根据配置文件, 设置整个node运行所需的环境.
+//
+// 设置环境则会为节点创建存储、网络、共识、内存、线程池等一些列的句柄.
 pub fn setup_environment(node_config: &mut NodeConfig) -> LibraHandle {
     // Some of our code uses the rayon global thread pool. Name the rayon threads so it doesn't
     // cause confusion, otherwise the threads would have their parent's name.
+
+    // 1）配置并行计算线程池.
     rayon::ThreadPoolBuilder::new()
         .thread_name(|index| format!("rayon-global-{}", index))
         .build_global()
         .expect("Building rayon global thread pool should work.");
 
     let mut instant = Instant::now();
+
+    // 2）初始化LibraDB, LibraDB封装了rocksDB.
     let (libra_db, db_rw) = DbReaderWriter::wrap(
         LibraDB::open(
             &node_config.storage.dir(),
@@ -79,13 +86,18 @@ pub fn setup_environment(node_config: &mut NodeConfig) -> LibraHandle {
         )
         .expect("DB should open."),
     );
+
+    // 3）开启storage service,  它实际是启动了一个单线程, 监听网络端口39123过来的请求.
     let _simple_storage_service =
         start_storage_service_with_db(&node_config, Arc::clone(&libra_db));
+
+    // 4）开启backup service, backup service使用了tokio的并发处理框架, 使用warp提供web server, 在端口54170上等待请求.
     let backup_service = start_backup_service(
         node_config.storage.backup_service_port,
         Arc::clone(&libra_db),
     );
 
+    // 5）启动db
     bootstrap_db_if_empty::<LibraVM>(&db_rw, get_genesis_txn(&node_config).unwrap())
         .expect("Db-bootstrapper should not fail.");
 
@@ -95,6 +107,8 @@ pub fn setup_environment(node_config: &mut NodeConfig) -> LibraHandle {
     );
 
     instant = Instant::now();
+
+    // 6）初始化chunk_executor
     let chunk_executor = setup_chunk_executor(db_rw.clone());
     debug!(
         "ChunkExecutor setup in {} ms",
@@ -106,6 +120,7 @@ pub fn setup_environment(node_config: &mut NodeConfig) -> LibraHandle {
     let mut consensus_network_handles = None;
     let mut reconfig_subscriptions = vec![];
 
+    // 7）定义配置更新事件处理
     let (mempool_reconfig_subscription, mempool_reconfig_events) =
         gen_mempool_reconfig_subscription();
     reconfig_subscriptions.push(mempool_reconfig_subscription);
@@ -127,6 +142,8 @@ pub fn setup_environment(node_config: &mut NodeConfig) -> LibraHandle {
         network_configs.push((RoleType::Validator, network_config));
     }
 
+    // 8）接下来就是为state同步, mempool和libraBFT创建服务端口了, socket监听端口54172, 此外, Gossip服务发现也在此端口.
+    //
     // Instantiate every network and collect the requisite endpoints for state_sync, mempool, and consensus.
     for (role, network_config) in network_configs {
         // Perform common instantiation steps
@@ -208,6 +225,8 @@ pub fn setup_environment(node_config: &mut NodeConfig) -> LibraHandle {
     );
     let (mp_client_sender, mp_client_events) = channel(AC_SMP_CHANNEL_BUFFER_SIZE);
 
+
+    // 9) 启动RPC服务： address: "0.0.0.0:54166"，背后使用的是warp和tokio
     let rpc_runtime = bootstrap_rpc(&node_config, libra_db.clone(), mp_client_sender);
 
     let mut consensus_runtime = None;

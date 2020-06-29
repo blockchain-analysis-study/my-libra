@@ -28,9 +28,13 @@ struct Args {
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+// TODO 节点主入口
 fn main() {
+
+    // 读取命令行参数
     let args = Args::from_args();
 
+    // 加载 配置文件
     let mut config = NodeConfig::load(args.config).expect("Failed to load node config");
     println!("Using node config {:?}", &config);
     crash_handler::setup_panic_handler();
@@ -56,6 +60,9 @@ fn main() {
         }
     }
 
+    // 根据配置文件, 设置整个node运行所需的环境.
+    //
+    // 设置环境则会为节点创建存储、网络、共识、内存、线程池等一些列的句柄.
     let _node_handle = libra_node::main_node::setup_environment(&mut config);
 
     let term = Arc::new(AtomicBool::new(false));

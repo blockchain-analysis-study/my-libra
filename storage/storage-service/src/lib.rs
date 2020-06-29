@@ -34,7 +34,10 @@ pub struct StorageService {
     db: Arc<LibraDB>,
 }
 
+// storage service实际启动了一个单线程, 监听网络端口39123过来的请求, 处理请求并返回结果.
+// 可以从代码中看到, storage service处理的请求包含:
 impl StorageService {
+
     fn handle_message(&self, input_message: Vec<u8>) -> Result<Vec<u8>, Error> {
         let input = lcs::from_bytes(&input_message)?;
         let output = match input {
